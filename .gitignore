@@ -1,0 +1,20 @@
+# Dependencies (DO NOT commit, huge and breaks installs)
+node_modules
+
+# WhatsApp Web session data (PRIVATE — contains auth tokens)
+.wwebjs_auth
+.wwebjs_cache
+
+# Persistent session temp dir (created at runtime on Railway volume)
+/data
+
+# Environment files (secrets)
+.env
+.env.local
+
+# Logs
+*.log
+
+# OS junk
+.DS_Store
+Thumbs.db
