@@ -244,6 +244,59 @@ function purgeChromiumCaches() {
     }
 }
 
+// Purge stale RemoteAuth temporary folders (the biggest space hogs).
+// whatsapp-web.js creates 'RemoteAuth-<session>' dirs as a staging area when
+// zipping/unzipping sessions for Supabase. These are NOT needed after the
+// transfer completes and can balloon to hundreds of MB per session.
+// The real session lives in Supabase (whatsapp_sessions table), so deleting
+// these temp dirs is safe — the bridge re-extracts from Supabase if needed.
+function purgeStaleRemoteAuthTemp() {
+    let purgedCount = 0;
+    let freedMB = 0;
+
+    try {
+        const wwebjsDir = path.join(VOLUME_PATH, 'wwebjs_sessions');
+        if (!fs.existsSync(wwebjsDir)) {
+            return;
+        }
+
+        const entries = fs.readdirSync(wwebjsDir);
+        for (const entry of entries) {
+            if (!entry.startsWith('RemoteAuth-')) continue;
+            const dirPath = path.join(wwebjsDir, entry);
+
+            // Measure size before deleting (approximate)
+            try {
+                const stat = fs.statSync(dirPath);
+                if (stat.isDirectory()) {
+                    // Recursively sum file sizes
+                    const sumSize = (d) => {
+                        let total = 0;
+                        for (const f of fs.readdirSync(d, { withFileTypes: true })) {
+                            const fp = path.join(d, f.name);
+                            try {
+                                total += f.isDirectory() ? sumSize(fp) : fs.statSync(fp).size;
+                            } catch {}
+                        }
+                        return total;
+                    };
+                    freedMB += Math.round(sumSize(dirPath) / (1024 * 1024));
+                }
+            } catch {}
+
+            if (deleteDirSafe(dirPath)) {
+                purgedCount++;
+            }
+        }
+
+        if (purgedCount > 0) {
+            console.log(`[CLEANUP] ${purgedCount} carpeta(s) RemoteAuth temporal(es) eliminadas (~${freedMB} MB liberados).`);
+        }
+    } catch (e) {
+        console.warn(`[CLEANUP] Error limpiando RemoteAuth temp: ${e.message}`);
+    }
+}
+
 // ============================================================
 // SESSIONS MAP: line_key -> { client, status, intervalId }
 // ============================================================
@@ -615,5 +668,7 @@ app.listen(PORT, () => {
     // Purge Chromium caches BEFORE starting sessions to free volume space.
     // Only auth tokens are preserved; Cache/Code Cache/GPUCache are wiped.
     purgeChromiumCaches();
+    // Also purge stale RemoteAuth temp dirs (the biggest space hogs, hundreds of MB).
+    purgeStaleRemoteAuthTemp();
     autoload();
 });
